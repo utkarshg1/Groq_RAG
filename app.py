@@ -1,6 +1,6 @@
 import streamlit as st 
 from dotenv import load_dotenv
-import os 
+import os
 from langchain_cohere import CohereEmbeddings
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -71,13 +71,13 @@ if __name__ == '__main__':
                 file.write(uploaded_file.getvalue())
                 file_name = uploaded_file.name
             if st.button("Get Embeddings"):
-                if os.path.exists('chroma_db'):
-                    os.remove('chroma_db')
-                splits = load_pdf_and_split(temp_file)
-                get_vectorstore(splits)                
-                st.success("Done")
+                with st.spinner('processing ...'):
+                    splits = load_pdf_and_split(temp_file)
+                    get_vectorstore(splits)                
+                    st.success("Done")
     if submit:
-        db = Chroma(persist_directory='./chroma_db', embedding_function=embedding_model)
-        retriever = db.as_retriever()
-        response = get_response(retriever, query)  
-        st.write(response)
+        with st.spinner('responding...'):
+            db = Chroma(persist_directory='./chroma_db', embedding_function=embedding_model)
+            retriever = db.as_retriever()
+            response = get_response(retriever, query)  
+            st.write(response)
