@@ -1,5 +1,4 @@
 import streamlit as st
-from dotenv import load_dotenv
 import os
 from langchain_cohere import CohereEmbeddings
 from langchain_groq import ChatGroq
@@ -14,15 +13,8 @@ import shutil
 # -----------------
 # Load API keys
 # -----------------
-load_dotenv()
-cohere_api_key = os.getenv("COHERE_API_KEY")
-groq_api_key = os.getenv("GROQ_API_KEY")
-
-if not cohere_api_key or not groq_api_key:
-    st.error("Missing API key(s) in .env file.")
-else:
-    os.environ["COHERE_API_KEY"] = cohere_api_key
-    os.environ["GROQ_API_KEY"] = groq_api_key
+os.environ["COHERE_API_KEY"] = st.secrets["COHERE_API_KEY"]
+os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
 
 # -----------------
 # Initialize LLM + Embeddings
