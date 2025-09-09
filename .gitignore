@@ -156,7 +156,7 @@ cython_debug/
 
 # chroma db
 chroma_db_*/
-temp.pdf
+temp/
 
 # streamlit
 .streamlit/

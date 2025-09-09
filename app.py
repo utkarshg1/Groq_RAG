@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import shutil
 from langchain_cohere import CohereEmbeddings
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -103,7 +102,8 @@ with st.sidebar:
     # Upload new PDF
     uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
     if uploaded_file:
-        temp_file = f"./{uploaded_file.name}"
+        os.makedirs("temp", exist_ok=True)
+        temp_file = f"temp/{uploaded_file.name}"
         with open(temp_file, "wb") as f:
             f.write(uploaded_file.getvalue())
         if st.button("Create Embeddings"):
@@ -134,14 +134,6 @@ with st.sidebar:
     else:
         st.info("No persisted documents found. Upload a PDF to get started.")
 
-    # Clear all embeddings
-    if st.button("Clear All Embeddings"):
-        for folder in os.listdir("."):
-            if folder.startswith("chroma_db_"):
-                shutil.rmtree(folder)
-        st.session_state.db = None
-        st.session_state.selected_doc = None
-        st.success("All embeddings cleared!")
 
 # -----------------
 # Handle QA
