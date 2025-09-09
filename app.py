@@ -9,43 +9,52 @@ from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
+import shutil
 
-# Load api keys
+# -----------------
+# Load API keys
+# -----------------
 load_dotenv()
-os.environ["COHERE_API_KEY"] = os.getenv("COHERE_API_KEY")
-os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
+cohere_api_key = os.getenv("COHERE_API_KEY")
+groq_api_key = os.getenv("GROQ_API_KEY")
 
-# Text embedding model
-embedding_model = CohereEmbeddings(model="embed-english-v3.0")
+if not cohere_api_key or not groq_api_key:
+    st.error("Missing API key(s) in .env file.")
+else:
+    os.environ["COHERE_API_KEY"] = cohere_api_key
+    os.environ["GROQ_API_KEY"] = groq_api_key
 
-# GROQ model
-llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+# -----------------
+# Initialize LLM + Embeddings
+# -----------------
+embedding_model = CohereEmbeddings(model="embed-english-v3.0")  # type: ignore
+llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.5, max_tokens=500)
 
 
-def load_pdf_and_split(path):
+# -----------------
+# Helpers
+# -----------------
+def load_pdf_and_split(path: str):
     loader = PyPDFLoader(path)
     docs = loader.load()
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    splits = text_splitter.split_documents(docs)
-    return splits
+    return text_splitter.split_documents(docs)
 
 
-def get_vectorstore(splits):
-    vectorstore = Chroma.from_documents(
-        splits, embedding=embedding_model, persist_directory="./chroma_db"
+@st.cache_resource(show_spinner="Creating vectorstore...")
+def get_vectorstore(splits, persist_dir="./chroma_db"):
+    """Cache vectorstore to avoid re-computation when same file is uploaded"""
+    return Chroma.from_documents(
+        splits, embedding=embedding_model, persist_directory=persist_dir
     )
 
 
-# Get rag response
-def get_response(retriever, query):
-    # Answer question
+def get_response(retriever, query: str):
+    """RAG pipeline: retrieval + QA with longer answers"""
     system_prompt = (
-        "You are an assistant for question-answering tasks. "
-        "Use the following pieces of retrieved context to answer "
-        "the question. If you don't know the answer, say that you "
-        "don't know."
-        "\n\n"
-        "{context}"
+        "You are a helpful assistant. Use the retrieved context to answer the question "
+        "as completely as possible. If the answer is not in the context, say that you don't know, "
+        "but always explain your reasoning based on the available information.\n\n{context}"
     )
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -59,29 +68,53 @@ def get_response(retriever, query):
     return response["answer"]
 
 
-if __name__ == "__main__":
-    st.set_page_config(page_title="RAG-Utkarsh", layout="wide")
-    st.title("RAG Chatbot - Utkarsh")
-    st.subheader("Please upload and get embeddings first")
-    query = st.text_input("Ask Question about the uploaded document")
-    submit = st.button("Answer")
-    with st.sidebar:
-        uploaded_file = st.file_uploader("Please Upload PDF", type=["pdf"])
-        if uploaded_file:
-            temp_file = "./temp.pdf"
-            with open(temp_file, "wb") as file:
-                file.write(uploaded_file.getvalue())
-                file_name = uploaded_file.name
-            if st.button("Get Embeddings"):
-                with st.spinner("processing ..."):
-                    splits = load_pdf_and_split(temp_file)
-                    get_vectorstore(splits)
-                    st.success("Done")
-    if submit:
-        with st.spinner("responding..."):
-            db = Chroma(
-                persist_directory="./chroma_db", embedding_function=embedding_model
-            )
-            retriever = db.as_retriever()
+# -----------------
+# Streamlit App
+# -----------------
+st.set_page_config(page_title="RAG-Utkarsh", layout="wide")
+st.title("RAG Chatbot - Utkarsh")
+
+# Session state for DB
+if "db" not in st.session_state:
+    st.session_state.db = None
+if "doc_name" not in st.session_state:
+    st.session_state.doc_name = None
+
+query = st.text_input("Ask a question about the uploaded document")
+submit = st.button("Answer")
+
+with st.sidebar:
+    uploaded_file = st.file_uploader("Please Upload PDF", type=["pdf"])
+    if uploaded_file:
+        temp_file = f"./{uploaded_file.name}"
+        with open(temp_file, "wb") as file:
+            file.write(uploaded_file.getvalue())
+
+        if st.button("Get Embeddings"):
+            with st.spinner("Processing..."):
+                splits = load_pdf_and_split(temp_file)
+
+                # Use separate folder per document to avoid mixing
+                persist_dir = f"./chroma_db_{uploaded_file.name}"
+                st.session_state.db = get_vectorstore(splits, persist_dir=persist_dir)
+                st.session_state.doc_name = uploaded_file.name
+                st.success(f"Embeddings for '{uploaded_file.name}' created & stored!")
+
+    if st.button("Clear Previous Embeddings"):
+        # Remove all persisted DBs
+        for folder in os.listdir("."):
+            if folder.startswith("chroma_db"):
+                shutil.rmtree(folder)
+        st.session_state.db = None
+        st.session_state.doc_name = None
+        st.success("All embeddings cleared!")
+
+# Handle QA
+if submit:
+    if st.session_state.db is None:
+        st.error("Please upload a PDF and create embeddings first.")
+    else:
+        with st.spinner("Responding..."):
+            retriever = st.session_state.db.as_retriever()
             response = get_response(retriever, query)
             st.write(response)

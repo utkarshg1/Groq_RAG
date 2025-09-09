@@ -155,7 +155,7 @@ dmypy.json
 cython_debug/
 
 # chroma db
-chroma_db/
+chroma_db_*/
 temp.pdf
 
 # PyCharm
