@@ -556,7 +556,6 @@ dependencies = [
     { name = "langchain-core" },
     { name = "langchain-groq" },
     { name = "pypdf" },
-    { name = "python-dotenv" },
     { name = "streamlit" },
 ]
 
@@ -571,7 +570,6 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=0.3.75" },
     { name = "langchain-groq", specifier = ">=0.3.7" },
     { name = "pypdf", specifier = ">=6.0.0" },
-    { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "streamlit", specifier = ">=1.49.1" },
 ]
 
