@@ -10,6 +10,13 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 
 # -----------------
+# Ensure temp dir exists at app start
+# -----------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMP_DIR = os.path.join(BASE_DIR, "temp")
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+# -----------------
 # Load API keys safely from Streamlit secrets
 # -----------------
 try:
@@ -102,8 +109,7 @@ with st.sidebar:
     # Upload new PDF
     uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
     if uploaded_file:
-        os.makedirs("temp", exist_ok=True)
-        temp_file = f"temp/{uploaded_file.name}"
+        temp_file = os.path.join(TEMP_DIR, uploaded_file.name)
         with open(temp_file, "wb") as f:
             f.write(uploaded_file.getvalue())
         if st.button("Create Embeddings"):
