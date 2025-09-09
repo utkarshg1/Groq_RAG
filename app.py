@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import shutil
 from langchain_cohere import CohereEmbeddings
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -8,13 +9,21 @@ from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
-import shutil
 
 # -----------------
-# Load API keys
+# Load API keys safely from Streamlit secrets
 # -----------------
-os.environ["COHERE_API_KEY"] = st.secrets["COHERE_API_KEY"]
-os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+try:
+    cohere_api_key = st.secrets["COHERE_API_KEY"]
+    groq_api_key = st.secrets["GROQ_API_KEY"]
+except KeyError:
+    st.error(
+        "Missing API key(s) in Streamlit secrets! Please add COHERE_API_KEY and GROQ_API_KEY."
+    )
+    st.stop()
+
+os.environ["COHERE_API_KEY"] = cohere_api_key
+os.environ["GROQ_API_KEY"] = groq_api_key
 
 # -----------------
 # Initialize LLM + Embeddings
@@ -34,7 +43,7 @@ def load_pdf_and_split(path: str):
 
 
 @st.cache_resource(show_spinner="Creating vectorstore...")
-def get_vectorstore(splits, persist_dir="./chroma_db"):
+def get_vectorstore(splits, persist_dir):
     """Cache vectorstore to avoid re-computation when same file is uploaded"""
     return Chroma.from_documents(
         splits, embedding=embedding_model, persist_directory=persist_dir
@@ -42,11 +51,12 @@ def get_vectorstore(splits, persist_dir="./chroma_db"):
 
 
 def get_response(retriever, query: str):
-    """RAG pipeline: retrieval + QA with longer answers"""
+    """RAG pipeline using stuff chain with long-answer friendly prompt"""
     system_prompt = (
         "You are a helpful assistant. Use the retrieved context to answer the question "
         "as completely as possible. If the answer is not in the context, say that you don't know, "
-        "but always explain your reasoning based on the available information.\n\n{context}"
+        "but always explain your reasoning based on the available information. "
+        "Provide detailed answers and examples when relevant.\n\n{context}"
     )
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -60,51 +70,87 @@ def get_response(retriever, query: str):
     return response["answer"]
 
 
+def list_documents():
+    """Return list of all persisted PDFs"""
+    return [
+        folder.replace("chroma_db_", "")
+        for folder in os.listdir(".")
+        if folder.startswith("chroma_db_")
+    ]
+
+
 # -----------------
 # Streamlit App
 # -----------------
 st.set_page_config(page_title="RAG-Utkarsh", layout="wide")
 st.title("RAG Chatbot - Utkarsh")
 
-# Session state for DB
+# Initialize session state
 if "db" not in st.session_state:
     st.session_state.db = None
-if "doc_name" not in st.session_state:
-    st.session_state.doc_name = None
+if "selected_doc" not in st.session_state:
+    st.session_state.selected_doc = None
 
-query = st.text_input("Ask a question about the uploaded document")
+query = st.text_input("Ask a question about the document")
 submit = st.button("Answer")
 
+# -----------------
+# Sidebar: Upload & Document Selection
+# -----------------
 with st.sidebar:
-    uploaded_file = st.file_uploader("Please Upload PDF", type=["pdf"])
+    st.header("Documents & Upload")
+
+    # Upload new PDF
+    uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
     if uploaded_file:
         temp_file = f"./{uploaded_file.name}"
-        with open(temp_file, "wb") as file:
-            file.write(uploaded_file.getvalue())
-
-        if st.button("Get Embeddings"):
+        with open(temp_file, "wb") as f:
+            f.write(uploaded_file.getvalue())
+        if st.button("Create Embeddings"):
             with st.spinner("Processing..."):
                 splits = load_pdf_and_split(temp_file)
-
-                # Use separate folder per document to avoid mixing
                 persist_dir = f"./chroma_db_{uploaded_file.name}"
                 st.session_state.db = get_vectorstore(splits, persist_dir=persist_dir)
-                st.session_state.doc_name = uploaded_file.name
+                st.session_state.selected_doc = uploaded_file.name
                 st.success(f"Embeddings for '{uploaded_file.name}' created & stored!")
 
-    if st.button("Clear Previous Embeddings"):
-        # Remove all persisted DBs
+    # List persisted PDFs
+    docs = list_documents()
+    if docs:
+        selected_doc = st.selectbox(
+            "Select Document",
+            docs,
+            index=(
+                docs.index(st.session_state.selected_doc)
+                if st.session_state.selected_doc in docs
+                else 0
+            ),
+        )
+        st.session_state.selected_doc = selected_doc
+        st.session_state.db = Chroma(
+            persist_directory=f"./chroma_db_{selected_doc}",
+            embedding_function=embedding_model,
+        )
+    else:
+        st.info("No persisted documents found. Upload a PDF to get started.")
+
+    # Clear all embeddings
+    if st.button("Clear All Embeddings"):
         for folder in os.listdir("."):
-            if folder.startswith("chroma_db"):
+            if folder.startswith("chroma_db_"):
                 shutil.rmtree(folder)
         st.session_state.db = None
-        st.session_state.doc_name = None
+        st.session_state.selected_doc = None
         st.success("All embeddings cleared!")
 
+# -----------------
 # Handle QA
+# -----------------
 if submit:
     if st.session_state.db is None:
-        st.error("Please upload a PDF and create embeddings first.")
+        st.error(
+            "Please select a document or upload a PDF and create embeddings first."
+        )
     else:
         with st.spinner("Responding..."):
             retriever = st.session_state.db.as_retriever()
