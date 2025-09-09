@@ -16,7 +16,7 @@ os.environ["COHERE_API_KEY"] = os.getenv("COHERE_API_KEY")
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
 # Text embedding model
-embedding_model = CohereEmbeddings(model="embed-english-light-v3.0")
+embedding_model = CohereEmbeddings(model="embed-english-v3.0")
 
 # GROQ model
 llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
